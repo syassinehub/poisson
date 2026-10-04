@@ -145,6 +145,7 @@
   // ---------- Espèces ----------
   const SPECIES = {
     neon: {
+      label: ["Néon", "Paracheirodon innesi"],
       len: 34, H: 0.13, speed: 1.9, minSpeed: 0.55, school: true, amp: 0.08, freq: 1.5,
       zone: (T, f) => [T.top + 40, T.bottom - 60],
       draw(ctx, f, t) {
@@ -166,6 +167,8 @@
         ctx.fill();
         // rayure bleu électrique, irisée
         const hue = 188 + 14 * Math.sin(t * 1.7 + f.seed), light = 58 + 10 * Math.sin(t * 2.3 + f.seed * 2);
+        f.body = b;
+        f.hue = hue;
         bandPath(ctx, b, 0.1, 0.92, -0.62, -0.02);
         ctx.fillStyle = `hsl(${hue} 100% ${light}%)`;
         ctx.fill();
@@ -184,6 +187,7 @@
     },
 
     ramirezi: {
+      label: ["Ramirezi", "Mikrogeophagus ramirezi"], link: "reproduction-ramirezi",
       len: 66, H: 0.22, speed: 1.1, amp: 0.05, freq: 1, hover: true,
       zone: (T) => [T.top + T.h * 0.28, T.bottom - 30],
       draw(ctx, f, t) {
@@ -227,7 +231,8 @@
     },
 
     cory: {
-      len: 50, H: 0.17, speed: 0.9, amp: 0.05, freq: 1.3, bottom: true,
+      label: ["Corydoras panda", "Corydoras panda"],
+      len: 50, H: 0.17, speed: 0.9, amp: 0.05, freq: 1.3, bottom: true, nocturnal: true,
       zone: (T, f) => {
         const y = T.floorAt(f.x);
         return [y - 30, y - 9];
@@ -385,11 +390,13 @@
       }
 
       // fuite devant la souris
-      if (T.pointer.active) {
+      // (un geste brusque effraie, une approche lente permet d'observer)
+      const scare = clamp((T.pointer.speed - 0.35) / 1.2, 0, 1);
+      if (T.pointer.active && scare > 0) {
         const dx = this.x - T.pointer.x, dy = this.y - T.pointer.y, d = Math.hypot(dx, dy) || 1;
-        const R = 130;
+        const R = 140;
         if (d < R) {
-          const k = (1 - d / R) ** 1.5;
+          const k = (1 - d / R) ** 1.5 * scare;
           ax += (dx / d) * k * 0.5;
           ay += (dy / d) * k * 0.4;
           this.boost = Math.max(this.boost, k * 1.4);
@@ -400,10 +407,14 @@
       this.vx += ax * dt;
       this.vy += ay * dt;
       this.vy *= Math.pow(0.97, dt);
-      const max = sp.speed * (1 + this.boost * 1.3);
+      // la nuit, les poissons ralentissent, sauf les corydoras plus actifs
+      const nightF = sp.nocturnal ? 1 + 0.3 * T.nightK : 1 - 0.4 * T.nightK;
+      const hovered = T.hover === this;
+      const max = sp.speed * nightF * (1 + this.boost * 1.3) * (hovered ? 0.25 : 1);
       let s = Math.hypot(this.vx, this.vy);
       if (s > max) { this.vx *= max / s; this.vy *= max / s; s = max; }
-      if (sp.minSpeed && s < sp.minSpeed) { const k = sp.minSpeed / (s || 1); this.vx *= k; this.vy *= k; s = sp.minSpeed; }
+      const min = (sp.minSpeed || 0) * nightF;
+      if (min && !hovered && s < min) { const k = min / (s || 1); this.vx *= k; this.vy *= k; s = min; }
       this.x += this.vx * dt;
       this.y += this.vy * dt;
       this.boost = Math.max(0, this.boost - 0.012 * dt);
@@ -414,6 +425,37 @@
       if (Math.abs(this.vx) > 0.06) this.facing = lerp(this.facing, Math.sign(this.vx), 0.07 * dt);
       const targetPitch = clamp(Math.atan2(this.vy, Math.abs(this.vx) + 0.3), -0.55, 0.55);
       this.pitch = lerp(this.pitch, targetPitch, 0.08);
+    }
+
+    get label() { return this.sp.label; }
+    get link() { return this.sp.link; }
+    bounds() {
+      const px = (this.tank.pointer.sx - 0.5) * (1 - this.z) * -30;
+      return { x: this.x + px, y: this.y, rx: this.size * this.z * 0.6, ry: this.size * this.z * 0.32 };
+    }
+
+    // Mode nuit : la rayure des néons devient fluorescente
+    drawGlow(ctx, k) {
+      if (this.kind !== "neon" || !this.body) return;
+      const px = (this.tank.pointer.sx - 0.5) * (1 - this.z) * -30;
+      const sx = Math.sign(this.facing) * Math.max(Math.abs(this.facing), 0.16);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = k * (0.45 + 0.55 * this.z);
+      ctx.translate(this.x + px, this.y);
+      ctx.rotate(this.pitch * Math.sign(sx));
+      ctx.scale(sx * this.z, this.z);
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = `hsl(${this.hue} 100% 60%)`;
+      bandPath(ctx, this.body, 0.1, 0.92, -0.62, -0.02);
+      ctx.fillStyle = `hsl(${this.hue} 100% 66%)`;
+      ctx.fill();
+      ctx.shadowColor = "rgba(255,40,80,.9)";
+      ctx.shadowBlur = 8;
+      bandPath(ctx, this.body, 0.45, 0.98, 0.1, 0.9);
+      ctx.fillStyle = "rgba(255,50,90,.45)";
+      ctx.fill();
+      ctx.restore();
     }
 
     draw(ctx, t) {
@@ -432,9 +474,9 @@
 
   // ---------- Crevettes ----------
   const SHRIMP_COLORS = {
-    cherry: { body: "#d11f2c", dark: "#8e0f1a", light: "rgba(255,170,170,.55)" },
-    velvet: { body: "#2f63d8", dark: "#173a8c", light: "rgba(170,205,255,.55)" },
-    amano: { body: "rgba(175,185,165,.8)", dark: "rgba(90,70,55,.85)", light: "rgba(240,245,235,.5)", dots: true },
+    cherry: { label: ["Red Cherry", "Neocaridina davidi"], link: "orties-nourriture-red-cherry", body: "#d11f2c", dark: "#8e0f1a", light: "rgba(255,170,170,.55)" },
+    velvet: { label: ["Blue Velvet", "Neocaridina davidi"], link: "blue-velvet-parade", body: "#2f63d8", dark: "#173a8c", light: "rgba(170,205,255,.55)" },
+    amano: { label: ["Crevette Amano", "Caridina multidentata"], link: "reproduction-crevette-amano", body: "rgba(175,185,165,.8)", dark: "rgba(90,70,55,.85)", light: "rgba(240,245,235,.5)", dots: true },
   };
 
   class Shrimp {
@@ -455,13 +497,21 @@
     }
 
     get z() { return 0.75 + this.depth / 120; }
+    get label() { return this.c.label; }
+    get link() { return this.c.link; }
+    bounds() {
+      const s = this.size * this.z;
+      return { x: this.x + this.dir * 4 * s, y: this.tank.floorAt(this.x) + this.depth + Math.min(0, this.air) - 7 * s, rx: 15 * s, ry: 9 * s };
+    }
 
     update(dt, t) {
       const T = this.tank;
       this.timer -= dt;
       // nourriture tombée au sol
       const food = T.food.find((f) => f.settled && Math.abs(f.x - this.x) < 160 && !f.taken);
-      if (this.air === 0 && food) {
+      if (T.hover === this && this.air === 0) {
+        this.state = "pick";
+      } else if (this.air === 0 && food) {
         this.dir = Math.sign(food.x - this.x) || this.dir;
         this.state = Math.abs(food.x - this.x) < 7 ? "pick" : "walk";
         if (this.state === "pick" && Math.random() < 0.02 * dt) T.eat(food, this);
@@ -573,7 +623,11 @@
       this.depth = rand(16, 30);
       this.t0 = rand(0, 100);
     }
+    get label() { return ["Escargot assassin", "Anentome helena"]; }
+    get link() { return "escargot-assassin-clea-helena"; }
+    bounds() { return { x: this.x - this.dir * 3, y: this.tank.floorAt(this.x) + this.depth - 8, rx: 16, ry: 11 }; }
     update(dt) {
+      if (this.tank.hover === this) return;
       this.x += this.dir * 0.05 * dt;
       if (this.x < this.tank.w * 0.3 || this.x > this.tank.w - 30) this.dir *= -1;
     }
@@ -624,7 +678,10 @@
       this.canvas.setAttribute("aria-hidden", "true");
       host.prepend(this.canvas);
       this.ctx = this.canvas.getContext("2d");
-      this.pointer = { x: -999, y: -999, sx: 0.5, active: false };
+      this.pointer = { x: -999, y: -999, sx: 0.5, active: false, speed: 0, t: 0 };
+      this.hover = null;
+      this.night = Aquarium.night;
+      this.nightK = this.night ? 1 : 0;
       this.food = [];
       this.fx = [];
       this.bubbles = [];
@@ -673,6 +730,25 @@
         const r = el.getBoundingClientRect(), pad = 26;
         this.avoid.push({ l: r.left - c.left - pad, r: r.right - c.left + pad, t: r.top - c.top - pad, b: r.bottom - c.top + pad });
       });
+    }
+
+    // Créature sous le curseur (la plus proche du premier plan)
+    pick() {
+      const P = this.pointer;
+      if (!P.active || REDUCED) return null;
+      let best = null, bd = 1.35;
+      const all = [...this.fish, ...this.shrimps, ...this.snails];
+      for (const c of all) {
+        const b = c.bounds();
+        const d = ((P.x - b.x) / (b.rx + 6)) ** 2 + ((P.y - b.y) / (b.ry + 6)) ** 2 - (c.z || 1) * 0.2;
+        if (d < bd) { bd = d; best = c; }
+      }
+      // garder la même cible tant que le curseur reste dessus (évite le clignotement)
+      if (this.hover && best !== this.hover) {
+        const b = this.hover.bounds();
+        if (((P.x - b.x) / (b.rx + 14)) ** 2 + ((P.y - b.y) / (b.ry + 14)) ** 2 < 1) return this.hover;
+      }
+      return best;
     }
 
     populate() {
@@ -831,12 +907,21 @@
       };
       host.addEventListener("pointermove", (e) => {
         const [x, y] = toLocal(e);
-        Object.assign(this.pointer, { x, y, sx: x / this.w, active: true });
+        const P = this.pointer, now = performance.now();
+        if (P.active && P.t) {
+          const v = Math.hypot(x - P.x, y - P.y) / Math.max(8, now - P.t);
+          P.speed = lerp(P.speed, v, 0.35);
+        }
+        Object.assign(P, { x, y, sx: x / this.w, active: true, t: now });
       });
       host.addEventListener("pointerleave", () => { this.pointer.active = false; });
       host.addEventListener("pointerdown", (e) => {
         if (e.target.closest("a, button, input, textarea, select, label")) return;
         const [x, y] = toLocal(e);
+        if (this.hover?.link && e.pointerType === "mouse") {
+          location.href = "article.html?a=" + this.hover.link;
+          return;
+        }
         this.feed(x, y);
         if (e.pointerType !== "mouse") setTimeout(() => (this.pointer.active = false), 300);
       });
@@ -877,6 +962,9 @@
 
     eat(p, who) {
       p.taken = true;
+      Aquarium.eaten++;
+      try { localStorage.setItem("kat-flakes", Aquarium.eaten); } catch {}
+      document.dispatchEvent(new CustomEvent("aquarium:eat", { detail: Aquarium.eaten }));
       for (let i = 0; i < 5; i++) {
         this.fx.push({ type: "crumb", x: p.x, y: p.y, vx: rand(-0.6, 0.6), vy: rand(-0.6, 0.3), a: 1, col: p.col });
       }
@@ -895,6 +983,10 @@
 
     update(dt) {
       this.t += dt / 60;
+      this.nightK = lerp(this.nightK, this.night ? 1 : 0, 0.04 * dt);
+      this.pointer.speed *= Math.pow(0.9, dt);
+      this.hover = this.pick();
+      this.host.classList.toggle("tank-link", Boolean(this.hover?.link));
       const t = this.t;
       for (const f of this.fish) f.update(dt, t);
       for (const s of this.shrimps) s.update(dt, t);
@@ -976,7 +1068,7 @@
         ctx.globalCompositeOperation = "lighter";
         for (const r of this.rays) {
           const sway = Math.sin(t * r.sp + r.s) * 40;
-          const a = r.a * (0.6 + 0.4 * Math.sin(t * r.sp * 2.3 + r.s));
+          const a = r.a * (0.6 + 0.4 * Math.sin(t * r.sp * 2.3 + r.s)) * (1 - 0.85 * this.nightK);
           const g = ctx.createLinearGradient(0, 0, 0, H * 0.95);
           g.addColorStop(0, `rgba(170,240,255,${a})`);
           g.addColorStop(1, "rgba(170,240,255,0)");
@@ -1029,17 +1121,103 @@
       }
       ctx.stroke();
 
-      // lueur autour du curseur
+      if (this.nightK > 0.01) this.drawNight(ctx);
+
+      // lueur autour du curseur (lampe torche la nuit)
       if (this.pointer.active) {
+        const N = this.nightK, R = 170 + 70 * N;
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        const g = ctx.createRadialGradient(this.pointer.x, this.pointer.y, 0, this.pointer.x, this.pointer.y, 170);
-        g.addColorStop(0, "rgba(120,230,255,.09)");
+        const g = ctx.createRadialGradient(this.pointer.x, this.pointer.y, 0, this.pointer.x, this.pointer.y, R);
+        g.addColorStop(0, `rgba(140,225,255,${0.09 + 0.16 * N})`);
+        g.addColorStop(0.5, `rgba(120,210,255,${0.03 + 0.06 * N})`);
         g.addColorStop(1, "rgba(120,230,255,0)");
         ctx.fillStyle = g;
-        ctx.fillRect(this.pointer.x - 170, this.pointer.y - 170, 340, 340);
+        ctx.fillRect(this.pointer.x - R, this.pointer.y - R, R * 2, R * 2);
         ctx.restore();
       }
+      this.drawLabel(ctx);
+    }
+
+    // ---------- Mode nuit ----------
+    drawNight(ctx) {
+      const N = this.nightK, W = this.w, H = this.h, t = this.t;
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = `rgba(2,6,26,${0.62 * N})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = "lighter";
+      // rayon de lune
+      const mx = W * 0.72 + Math.sin(t * 0.15) * 30;
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, `rgba(150,170,255,${0.1 * N})`);
+      g.addColorStop(1, "rgba(150,170,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(mx - 60, 0); ctx.lineTo(mx + 60, 0); ctx.lineTo(mx + 140, H); ctx.lineTo(mx - 40, H);
+      ctx.closePath();
+      ctx.fill();
+      // plancton bioluminescent
+      for (const p of this.plankton) {
+        const tw = 0.5 + 0.5 * Math.sin(t * 2 + p.s * 7);
+        ctx.globalAlpha = this.cfg.alpha * N * tw * (0.25 + 0.5 * p.z);
+        ctx.fillStyle = p.z > 0.6 ? "#7ff7e8" : "#6ab8ff";
+        const s = 1 + p.z * 1.8;
+        ctx.beginPath();
+        ctx.arc(p.x - (this.pointer.sx - 0.5) * p.z * 20, p.y, s, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+      for (const f of this.fish) f.drawGlow(ctx, N * this.cfg.alpha);
+    }
+
+    // ---------- Étiquette de l'espèce survolée ----------
+    drawLabel(ctx) {
+      const c = this.hover;
+      if (!c) return;
+      const b = c.bounds(), t = this.t;
+      const [name, latin] = c.label;
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "rgba(160,240,255,.85)";
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -t * 30;
+      ctx.beginPath();
+      ctx.ellipse(b.x, b.y, b.rx + 8, b.ry + 8, 0, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const cta = c.link ? "Cliquer pour lire l'article →" : null;
+      ctx.font = "600 14px Fraunces, Georgia, serif";
+      const w1 = ctx.measureText(name).width;
+      ctx.font = "italic 12px Inter, sans-serif";
+      const w2 = ctx.measureText(latin).width;
+      ctx.font = "600 11px Inter, sans-serif";
+      const w3 = cta ? ctx.measureText(cta).width : 0;
+      const bw = Math.max(w1, w2, w3) + 24, bh = cta ? 62 : 46;
+      let bx = clamp(b.x - bw / 2, 8, this.w - bw - 8);
+      let by = b.y - b.ry - bh - 16;
+      if (by < 16) by = b.y + b.ry + 16;
+      ctx.fillStyle = "rgba(4,30,48,.88)";
+      ctx.strokeStyle = "rgba(46,196,182,.7)";
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.textBaseline = "top";
+      ctx.fillStyle = "#fff";
+      ctx.font = "600 14px Fraunces, Georgia, serif";
+      ctx.fillText(name, bx + 12, by + 9);
+      ctx.fillStyle = "#8fd8de";
+      ctx.font = "italic 12px Inter, sans-serif";
+      ctx.fillText(latin, bx + 12, by + 27);
+      if (cta) {
+        ctx.fillStyle = "#ff8a6e";
+        ctx.font = "600 11px Inter, sans-serif";
+        ctx.fillText(cta, bx + 12, by + 44);
+      }
+      ctx.restore();
     }
 
     drawPlankton(ctx, z0, z1) {
@@ -1197,6 +1375,12 @@
     }
   }
 
+  // ---------- État partagé entre les aquariums de la page ----------
+  const Aquarium = {
+    night: localStorage.getItem("kat-night") === "1",
+    eaten: parseInt(localStorage.getItem("kat-flakes") || "0", 10) || 0,
+  };
+
   // ---------- Montage ----------
   const tanks = (window.__aquariums = []);
   const mount = (sel, mode) => document.querySelectorAll(sel).forEach((el) => tanks.push(new Tank(el, mode)));
@@ -1204,8 +1388,41 @@
   mount(".page-head, .article-hero", "head");
   mount("footer", "footer");
 
-  // indice "cliquez pour nourrir" qui disparaît au premier repas
-  document.addEventListener("aquarium:feed", () => {
-    document.querySelectorAll(".tank-hint").forEach((h) => h.classList.add("done"));
+  // Mode nuit : bouton dans l'en-tête, choix mémorisé
+  const nightBtn = document.querySelector(".night-toggle");
+  const applyNight = () => {
+    tanks.forEach((tk) => {
+      tk.night = Aquarium.night;
+      if (REDUCED) { tk.nightK = Aquarium.night ? 1 : 0; tk.draw(); }
+    });
+    document.documentElement.classList.toggle("aquarium-night", Aquarium.night);
+    if (nightBtn) {
+      nightBtn.setAttribute("aria-pressed", Aquarium.night);
+      nightBtn.title = Aquarium.night ? "Repasser en mode jour" : "Mode nuit de l'aquarium";
+    }
+  };
+  nightBtn?.addEventListener("click", () => {
+    Aquarium.night = !Aquarium.night;
+    localStorage.setItem("kat-night", Aquarium.night ? "1" : "0");
+    applyNight();
+  });
+  applyNight();
+
+  // Indice puis compteur de flocons mangés
+  const hint = document.querySelector(".tank-hint");
+  const counter = document.querySelector(".tank-counter");
+  const showCounter = () => {
+    if (!counter) return;
+    counter.hidden = false;
+    counter.querySelector("b").textContent = Aquarium.eaten.toLocaleString("fr-FR");
+    counter.querySelectorAll(".plural").forEach((el) => (el.textContent = Aquarium.eaten > 1 ? "s" : ""));
+  };
+  if (Aquarium.eaten > 0) { hint?.classList.add("done"); showCounter(); }
+  document.addEventListener("aquarium:feed", () => hint?.classList.add("done"));
+  document.addEventListener("aquarium:eat", () => {
+    showCounter();
+    counter?.classList.remove("bump");
+    void counter?.offsetWidth;
+    counter?.classList.add("bump");
   });
 })();
