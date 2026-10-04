@@ -14,6 +14,28 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  // Générateur pseudo-aléatoire à graine : le décor reste identique quand on le reconstruit
+  const seeded = (seed) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  // Halo radial pré-rendu une fois (bien plus rapide qu'un dégradé recréé à chaque image)
+  function glowSprite(stops) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    stops.forEach(([o, col]) => grad.addColorStop(o, col));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    return c;
+  }
+  const CAUSTIC = glowSprite([[0, "rgba(255,255,220,1)"], [1, "rgba(255,255,220,0)"]]);
+  const TORCH = glowSprite([[0, "rgba(140,225,255,1)"], [0.5, "rgba(120,210,255,.35)"], [1, "rgba(120,230,255,0)"]]);
+
   // ---------- Géométrie du corps des poissons (vue de profil) ----------
   // Un poisson est décrit le long d'une colonne u ∈ [0 museau, 1 base de la queue].
   // La colonne ondule (onde qui se propage vers la queue), le contour suit.
@@ -156,9 +178,11 @@
         drawTail(ctx, b, L * 0.24, "rgba(235,215,215,.42)", f.phase, f.swim);
 
         bodyPath(ctx, b);
-        const g = ctx.createLinearGradient(0, -H, 0, H);
-        g.addColorStop(0, "#56705f"); g.addColorStop(0.45, "#aab9b2"); g.addColorStop(1, "#eef3f2");
-        ctx.fillStyle = g;
+        if (!f.grad) {
+          f.grad = ctx.createLinearGradient(0, -H, 0, H);
+          f.grad.addColorStop(0, "#56705f"); f.grad.addColorStop(0.45, "#aab9b2"); f.grad.addColorStop(1, "#eef3f2");
+        }
+        ctx.fillStyle = f.grad;
         ctx.fill();
         ctx.save();
         ctx.clip();
@@ -200,15 +224,17 @@
         drawTail(ctx, b, L * 0.28, "rgba(120,150,215,.55)", f.phase, f.swim, 0.85);
 
         bodyPath(ctx, b);
-        const g = ctx.createLinearGradient(L * 0.5, 0, -L * 0.4, 0);
-        g.addColorStop(0, "#f2a93b"); g.addColorStop(0.28, "#f0c86a"); g.addColorStop(0.55, "#9db8d8"); g.addColorStop(1, "#5c76c4");
-        ctx.fillStyle = g;
+        if (!f.grad) {
+          f.grad = ctx.createLinearGradient(L * 0.5, 0, -L * 0.4, 0);
+          f.grad.addColorStop(0, "#f2a93b"); f.grad.addColorStop(0.28, "#f0c86a"); f.grad.addColorStop(0.55, "#9db8d8"); f.grad.addColorStop(1, "#5c76c4");
+          f.grad2 = ctx.createLinearGradient(0, -H, 0, H);
+          f.grad2.addColorStop(0, "rgba(20,30,60,.35)"); f.grad2.addColorStop(0.5, "rgba(0,0,0,0)"); f.grad2.addColorStop(1, "rgba(255,110,60,.35)");
+        }
+        ctx.fillStyle = f.grad;
         ctx.fill();
         ctx.save();
         ctx.clip();
-        const v = ctx.createLinearGradient(0, -H, 0, H);
-        v.addColorStop(0, "rgba(20,30,60,.35)"); v.addColorStop(0.5, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(255,110,60,.35)");
-        ctx.fillStyle = v;
+        ctx.fillStyle = f.grad2;
         ctx.fillRect(-L, -H * 2, L * 2, H * 4);
         bandPath(ctx, b, 0.08, 0.16, -1.4, 1.4);
         ctx.fillStyle = "rgba(15,15,20,.85)";
@@ -246,9 +272,11 @@
         drawTail(ctx, b, L * 0.25, "rgba(230,225,215,.45)", f.phase, f.swim, 0.55);
 
         bodyPath(ctx, b);
-        const g = ctx.createLinearGradient(0, -H, 0, H);
-        g.addColorStop(0, "#cdbca8"); g.addColorStop(0.5, "#efe5d8"); g.addColorStop(1, "#f6ede4");
-        ctx.fillStyle = g;
+        if (!f.grad) {
+          f.grad = ctx.createLinearGradient(0, -H, 0, H);
+          f.grad.addColorStop(0, "#cdbca8"); f.grad.addColorStop(0.5, "#efe5d8"); f.grad.addColorStop(1, "#f6ede4");
+        }
+        ctx.fillStyle = f.grad;
         ctx.fill();
         ctx.save();
         ctx.clip();
@@ -445,15 +473,15 @@
       ctx.translate(this.x + px, this.y);
       ctx.rotate(this.pitch * Math.sign(sx));
       ctx.scale(sx * this.z, this.z);
-      ctx.shadowBlur = 14;
-      ctx.shadowColor = `hsl(${this.hue} 100% 60%)`;
+      // halo = bande élargie translucide (shadowBlur coûte beaucoup trop cher)
+      bandPath(ctx, this.body, 0.05, 0.97, -1.6, 0.7);
+      ctx.fillStyle = `hsla(${this.hue},100%,60%,.22)`;
+      ctx.fill();
       bandPath(ctx, this.body, 0.1, 0.92, -0.62, -0.02);
       ctx.fillStyle = `hsl(${this.hue} 100% 66%)`;
       ctx.fill();
-      ctx.shadowColor = "rgba(255,40,80,.9)";
-      ctx.shadowBlur = 8;
       bandPath(ctx, this.body, 0.45, 0.98, 0.1, 0.9);
-      ctx.fillStyle = "rgba(255,50,90,.45)";
+      ctx.fillStyle = "rgba(255,50,90,.4)";
       ctx.fill();
       ctx.restore();
     }
@@ -651,9 +679,9 @@
       const whorls = [[0, 0, 6.5], [-6, -1, 5], [-10.5, -1.6, 3.7], [-14, -2, 2.6], [-16.4, -2.3, 1.6]];
       for (const [x, yy, r] of whorls) {
         ctx.beginPath(); ctx.ellipse(x, yy, r * 1.05, r, 0, 0, TAU);
-        const g = ctx.createLinearGradient(x, yy - r, x, yy + r);
-        g.addColorStop(0, "#f2cf5a"); g.addColorStop(1, "#b98a24");
-        ctx.fillStyle = g; ctx.fill();
+        ctx.fillStyle = "#d9ab3f"; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x, yy - r * 0.35, r * 0.8, r * 0.45, 0, 0, TAU);
+        ctx.fillStyle = "rgba(255,230,140,.45)"; ctx.fill();
         ctx.beginPath(); ctx.ellipse(x, yy, r * 1.05, r * 0.42, 0, 0, TAU);
         ctx.fillStyle = "#4a2d14"; ctx.fill();
       }
@@ -687,6 +715,8 @@
       this.bubbles = [];
       this.t = 0;
       this.visible = true;
+      this.quality = 2; // 2 = normal, 1 = réduit, 0 = minimal (ajusté selon la fluidité mesurée)
+      this.perf = { n: 0, sum: 0 };
       this.resize();
       this.populate();
       this.bind();
@@ -712,7 +742,7 @@
       const r = this.host.getBoundingClientRect();
       this.w = Math.max(320, r.width);
       this.h = Math.max(160, r.height);
-      this.dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+      this.dpr = Math.min(window.devicePixelRatio || 1, [0.75, 1, 1.5][this.quality]);
       this.canvas.width = Math.round(this.w * this.dpr);
       this.canvas.height = Math.round(this.h * this.dpr);
       this.floorTop = this.h - (this.w < 700 ? 150 : 185);
@@ -773,6 +803,18 @@
     // Décor : plantes générées, sol pré-rendu dans un canvas hors écran
     buildScenery() {
       const W = this.w, H = this.h;
+      const rnd = seeded(this.mode.length * 97 + Math.round(W / 50));
+      const rand = (a, b) => a + rnd() * (b - a);
+      const ctx = this.ctx;
+      this.rayGrad = ctx.createLinearGradient(0, 0, 0, H * 0.95);
+      this.rayGrad.addColorStop(0, "rgba(170,240,255,1)");
+      this.rayGrad.addColorStop(1, "rgba(170,240,255,0)");
+      this.moonGrad = ctx.createLinearGradient(0, 0, 0, H);
+      this.moonGrad.addColorStop(0, "rgba(150,170,255,1)");
+      this.moonGrad.addColorStop(1, "rgba(150,170,255,0)");
+      this.surfGrad = ctx.createLinearGradient(0, 0, 0, 34);
+      this.surfGrad.addColorStop(0, "rgba(190,245,255,.22)");
+      this.surfGrad.addColorStop(1, "rgba(190,245,255,0)");
       this.rays = Array.from({ length: this.cfg.rays }, (_, i) => ({
         x: (i + rand(0.1, 0.9)) * (W / Math.max(1, this.cfg.rays)), w: rand(30, 110), a: rand(0.04, 0.09), s: rand(0, TAU), sp: rand(0.15, 0.35),
       }));
@@ -858,7 +900,7 @@
         c.lineWidth = wdt * 0.25;
         c.stroke();
         branch(x2, y2, ang - rand(0.3, 0.7), len * rand(0.55, 0.75), wdt * 0.65, depth + 1);
-        if (Math.random() < 0.8) branch(x2, y2, ang + rand(0.2, 0.6), len * rand(0.45, 0.65), wdt * 0.6, depth + 1);
+        if (rnd() < 0.8) branch(x2, y2, ang + rand(0.2, 0.6), len * rand(0.45, 0.65), wdt * 0.6, depth + 1);
       };
       if (!small) branch(W * 0.93, this.floorAt(W * 0.93) + 8, -2.3, 120, 11, 0);
 
@@ -871,7 +913,7 @@
       c.clip(floorPath);
       for (let i = 0; i < W * 1.6; i++) {
         const x = rand(0, W), y = rand(this.floorTop - 15, H);
-        c.fillStyle = Math.random() < 0.5 ? "rgba(120,90,50,.22)" : "rgba(255,250,235,.4)";
+        c.fillStyle = rnd() < 0.5 ? "rgba(120,90,50,.22)" : "rgba(255,250,235,.4)";
         c.fillRect(x, y, rand(0.8, 2), rand(0.8, 1.6));
       }
       const shade = c.createLinearGradient(0, this.floorTop - 15, 0, this.floorTop + 25);
@@ -883,7 +925,7 @@
       // tapis de Monte Carlo
       const carpet = (x0, x1) => {
         for (let x = x0; x < x1; x += 2.4) {
-          const n = 2 + Math.floor(Math.random() * 3);
+          const n = 2 + Math.floor(rnd() * 3);
           for (let k = 0; k < n; k++) {
             const y = this.floorAt(x) + rand(-7, 6);
             const r = rand(1.8, 3.3);
@@ -974,11 +1016,29 @@
     frame(now) {
       const dt = Math.min(3, (now - this.last) / 16.67);
       this.last = now;
-      if (this.visible) {
+      if (this.visible && !document.hidden) {
         this.update(dt);
         this.draw();
+        this.watchPerf(dt);
       }
       requestAnimationFrame((n) => this.frame(n));
+    }
+
+    // Qualité adaptative : si l'animation n'est pas fluide (< ~40 i/s), on baisse la résolution
+    watchPerf(dt) {
+      const P = this.perf;
+      if (this.quality === 0 || dt >= 3) return;
+      P.n++;
+      P.sum += dt;
+      if (P.n < 120) return;
+      const avg = P.sum / P.n;
+      P.n = P.sum = 0;
+      if (avg > 1.45) {
+        this.quality--;
+        if (this.quality === 0) this.plankton.length = Math.min(this.plankton.length, 30);
+        this.resize();
+        this.draw();
+      }
     }
 
     update(dt) {
@@ -1069,10 +1129,9 @@
         for (const r of this.rays) {
           const sway = Math.sin(t * r.sp + r.s) * 40;
           const a = r.a * (0.6 + 0.4 * Math.sin(t * r.sp * 2.3 + r.s)) * (1 - 0.85 * this.nightK);
-          const g = ctx.createLinearGradient(0, 0, 0, H * 0.95);
-          g.addColorStop(0, `rgba(170,240,255,${a})`);
-          g.addColorStop(1, "rgba(170,240,255,0)");
-          ctx.fillStyle = g;
+          if (a < 0.004) continue;
+          ctx.globalAlpha = a * this.cfg.alpha;
+          ctx.fillStyle = this.rayGrad;
           ctx.beginPath();
           ctx.moveTo(r.x - r.w / 2, 0);
           ctx.lineTo(r.x + r.w / 2, 0);
@@ -1107,10 +1166,7 @@
       this.drawBlades(ctx, 2);
 
       // surface de l'eau
-      const sg = ctx.createLinearGradient(0, 0, 0, 34);
-      sg.addColorStop(0, "rgba(190,245,255,.22)");
-      sg.addColorStop(1, "rgba(190,245,255,0)");
-      ctx.fillStyle = sg;
+      ctx.fillStyle = this.surfGrad;
       ctx.fillRect(0, 0, W, 34);
       ctx.strokeStyle = "rgba(210,250,255,.28)";
       ctx.lineWidth = 1.2;
@@ -1128,12 +1184,8 @@
         const N = this.nightK, R = 170 + 70 * N;
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        const g = ctx.createRadialGradient(this.pointer.x, this.pointer.y, 0, this.pointer.x, this.pointer.y, R);
-        g.addColorStop(0, `rgba(140,225,255,${0.09 + 0.16 * N})`);
-        g.addColorStop(0.5, `rgba(120,210,255,${0.03 + 0.06 * N})`);
-        g.addColorStop(1, "rgba(120,230,255,0)");
-        ctx.fillStyle = g;
-        ctx.fillRect(this.pointer.x - R, this.pointer.y - R, R * 2, R * 2);
+        ctx.globalAlpha = (0.09 + 0.16 * N) * this.cfg.alpha;
+        ctx.drawImage(TORCH, this.pointer.x - R, this.pointer.y - R, R * 2, R * 2);
         ctx.restore();
       }
       this.drawLabel(ctx);
@@ -1149,10 +1201,8 @@
       ctx.globalCompositeOperation = "lighter";
       // rayon de lune
       const mx = W * 0.72 + Math.sin(t * 0.15) * 30;
-      const g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, `rgba(150,170,255,${0.1 * N})`);
-      g.addColorStop(1, "rgba(150,170,255,0)");
-      ctx.fillStyle = g;
+      ctx.globalAlpha = 0.1 * N;
+      ctx.fillStyle = this.moonGrad;
       ctx.beginPath();
       ctx.moveTo(mx - 60, 0); ctx.lineTo(mx + 60, 0); ctx.lineTo(mx + 140, H); ctx.lineTo(mx - 40, H);
       ctx.closePath();
@@ -1162,10 +1212,8 @@
         const tw = 0.5 + 0.5 * Math.sin(t * 2 + p.s * 7);
         ctx.globalAlpha = this.cfg.alpha * N * tw * (0.25 + 0.5 * p.z);
         ctx.fillStyle = p.z > 0.6 ? "#7ff7e8" : "#6ab8ff";
-        const s = 1 + p.z * 1.8;
-        ctx.beginPath();
-        ctx.arc(p.x - (this.pointer.sx - 0.5) * p.z * 20, p.y, s, 0, TAU);
-        ctx.fill();
+        const s = 1.6 + p.z * 2.6;
+        ctx.fillRect(p.x - (this.pointer.sx - 0.5) * p.z * 20 - s / 2, p.y - s / 2, s, s);
       }
       ctx.restore();
       for (const f of this.fish) f.drawGlow(ctx, N * this.cfg.alpha);
@@ -1282,25 +1330,33 @@
         ctx.strokeStyle = st.hue ? "#6b5a2a" : "#4f6b2c";
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(st.x, by); ctx.quadraticCurveTo(cx, cy, tx, ty); ctx.stroke();
+        // feuilles regroupées en 6 teintes : un seul fill par teinte au lieu d'un par feuille
         const step = st.hue ? 7 : 9;
         const nodes = Math.floor(st.h / step);
-        for (let i = 2; i <= nodes; i++) {
-          const u = i / nodes;
-          const x = (1 - u) ** 2 * st.x + 2 * (1 - u) * u * cx + u * u * tx;
-          const y = (1 - u) ** 2 * by + 2 * (1 - u) * u * cy + u * u * ty;
-          const profile = i % 2 ? 1 : 0.45; // une paire sur deux vue de face
-          const len = (st.hue ? 13 : 15) * (1 - u * 0.45) * profile;
-          const wid = (st.hue ? 2.4 : 4.2) * (1 - u * 0.3);
-          const hue = st.hue ? lerp(95, 6, u ** 1.2) : lerp(105, 82, u);
-          const light = st.hue ? lerp(28, 50, u) : lerp(24, 46, u);
+        const BUCKETS = 6;
+        for (let k = 0; k < BUCKETS; k++) {
+          const um = (k + 0.5) / BUCKETS;
+          const hue = st.hue ? lerp(95, 6, um ** 1.2) : lerp(105, 82, um);
+          const light = st.hue ? lerp(28, 50, um) : lerp(24, 46, um);
           ctx.fillStyle = `hsl(${hue} ${st.hue ? 72 : 58}% ${light}%)`;
-          const lift = 0.5 + u * 0.22 + Math.sin(t * 1.8 + i * 0.7 + st.s) * 0.08;
-          for (const side of [-1, 1]) {
-            const ang = side > 0 ? -lift : Math.PI + lift;
-            ctx.beginPath();
-            ctx.ellipse(x + Math.cos(ang) * len * 0.5, y + Math.sin(ang) * len * 0.5, len * 0.55, wid, ang, 0, TAU);
-            ctx.fill();
+          ctx.beginPath();
+          for (let i = 2; i <= nodes; i++) {
+            const u = i / nodes;
+            if (Math.min(BUCKETS - 1, Math.floor(u * BUCKETS)) !== k) continue;
+            const x = (1 - u) ** 2 * st.x + 2 * (1 - u) * u * cx + u * u * tx;
+            const y = (1 - u) ** 2 * by + 2 * (1 - u) * u * cy + u * u * ty;
+            const profile = i % 2 ? 1 : 0.45; // une paire sur deux vue de face
+            const len = (st.hue ? 13 : 15) * (1 - u * 0.45) * profile;
+            const wid = (st.hue ? 2.4 : 4.2) * (1 - u * 0.3);
+            const lift = 0.5 + u * 0.22 + Math.sin(t * 1.8 + i * 0.7 + st.s) * 0.08;
+            for (const side of [-1, 1]) {
+              const ang = side > 0 ? -lift : Math.PI + lift;
+              const ex = x + Math.cos(ang) * len * 0.5, ey = y + Math.sin(ang) * len * 0.5, rx = len * 0.55;
+              ctx.moveTo(ex + Math.cos(ang) * rx, ey + Math.sin(ang) * rx);
+              ctx.ellipse(ex, ey, rx, wid, ang, 0, TAU);
+            }
           }
+          ctx.fill();
         }
         // bourgeon terminal
         ctx.fillStyle = st.hue ? "hsl(8 80% 55%)" : "hsl(85 60% 48%)";
@@ -1313,20 +1369,13 @@
       ctx.save();
       ctx.clip(this.floorPath);
       ctx.globalCompositeOperation = "lighter";
-      for (let i = 0; i < 26; i++) {
+      ctx.globalAlpha = 0.16 * this.cfg.alpha;
+      const n = this.quality ? 26 : 12;
+      for (let i = 0; i < n; i++) {
         const x = ((i * 97.3) % this.w) + Math.sin(t * 0.5 + i * 1.7) * 30;
         const y = this.floorTop + 8 + ((i * 37) % 60) + Math.cos(t * 0.6 + i) * 5;
         const r = 26 + Math.sin(t * 0.9 + i * 2.3) * 10;
-        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, "rgba(255,255,220,.16)");
-        g.addColorStop(1, "rgba(255,255,220,0)");
-        ctx.fillStyle = g;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.scale(1, 0.32);
-        ctx.translate(-x, -y);
-        ctx.fillRect(x - r, y - r, r * 2, r * 2);
-        ctx.restore();
+        ctx.drawImage(CAUSTIC, x - r, y - r * 0.32, r * 2, r * 0.64);
       }
       ctx.restore();
     }

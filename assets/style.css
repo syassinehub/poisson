@@ -28,7 +28,7 @@ h1, h2, h3 { font-family: Fraunces, Georgia, serif; line-height: 1.15; }
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 12px 24px;
-  background: rgba(4, 30, 48, .85); backdrop-filter: blur(10px);
+  background: rgba(4, 30, 48, .96);
   color: #fff;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; }
@@ -252,7 +252,7 @@ footer { background: var(--abyss); color: #8fb4c2; padding: 56px 0 28px; font-si
 .tank-hint {
   position: relative; margin: 0;
   padding: 8px 14px 8px 34px; border-radius: 999px; font-size: .82rem; color: #d8f3f6;
-  background: rgba(4, 30, 48, .45); border: 1px solid rgba(160, 230, 240, .25); backdrop-filter: blur(6px);
+  background: rgba(4, 30, 48, .72); border: 1px solid rgba(160, 230, 240, .25);
   pointer-events: none; transition: opacity .6s, transform .6s;
   animation: hint-float 3.2s ease-in-out infinite;
 }
@@ -265,7 +265,7 @@ footer { background: var(--abyss); color: #8fb4c2; padding: 56px 0 28px; font-si
 .tank-counter {
   display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 14px; border-radius: 999px;
   font-size: .85rem; color: #d8f3f6; background: rgba(4, 30, 48, .5); border: 1px solid rgba(240, 164, 58, .45);
-  backdrop-filter: blur(6px); animation: rise-in .6s cubic-bezier(.2, .75, .2, 1) both;
+  background: rgba(4, 30, 48, .78); animation: rise-in .6s cubic-bezier(.2, .75, .2, 1) both;
 }
 .tank-counter[hidden] { display: none; }
 .tank-counter svg { width: 22px; height: 13px; color: #f0a43a; }
@@ -311,7 +311,8 @@ footer { background: var(--abyss); color: #8fb4c2; padding: 56px 0 28px; font-si
 .reveal.in { opacity: 1; transform: none; }
 
 /* cartes 3D + reflet */
-.card, .feature, .vcard { position: relative; transition: transform .25s ease-out, box-shadow .25s, background .2s; will-change: transform; }
+.card, .feature, .vcard { position: relative; transition: transform .25s ease-out, box-shadow .25s, background .2s; }
+.tilting { will-change: transform; }
 .tilting::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; z-index: 2;
   background: radial-gradient(circle at var(--gx) var(--gy), rgba(255, 255, 255, .28), transparent 55%);
